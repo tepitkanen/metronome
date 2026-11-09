@@ -1,6 +1,7 @@
 import numpy as np
 
 from metronome.engine import Metronome
+from metronome.sound import ACCENT, NORMAL, SUB
 
 SR = 1000  # tiny samplerate keeps the arithmetic readable
 
@@ -8,8 +9,11 @@ SR = 1000  # tiny samplerate keeps the arithmetic readable
 def make(bpm=60, bpb=4):
     m = Metronome(bpm=bpm, beats_per_bar=bpb, samplerate=SR)
     # Simple stand-in clicks so the output is easy to inspect.
-    m.click = np.full(5, 0.5, dtype=np.float32)
-    m.accent = np.full(5, 1.0, dtype=np.float32)
+    m.buffers = {
+        ACCENT: np.full(5, 1.0, dtype=np.float32),
+        NORMAL: np.full(5, 0.5, dtype=np.float32),
+        SUB: np.full(5, 0.25, dtype=np.float32),
+    }
     return m
 
 
@@ -33,13 +37,13 @@ def test_clicks_at_exact_offsets():
 def test_reported_times_use_stream_clock():
     m = make(bpm=120)
     m.render(1000, start_time=10.0)
-    assert [t for _, t in drain(m)] == [10.0, 10.5]
+    assert [b.time for b in drain(m)] == [10.0, 10.5]
 
 
 def test_accent_on_first_beat_of_bar():
     m = make(bpm=300, bpb=3)  # beat every 200 samples
     signal = m.render(1000)
-    assert [i for i, _ in drain(m)] == [0, 1, 2, 0, 1]
+    assert [b.index for b in drain(m)] == [0, 1, 2, 0, 1]
     assert signal[[0, 200, 400, 600, 800]].tolist() == [1.0, 0.5, 0.5, 1.0, 0.5]
 
 
@@ -55,7 +59,7 @@ def test_bpm_change_applies_from_next_interval():
     m.render(500, start_time=0.0)
     m.bpm = 120
     m.render(2000, start_time=0.5)
-    assert [t for _, t in drain(m)] == [0.0, 1.0, 1.5, 2.0]
+    assert [b.time for b in drain(m)] == [0.0, 1.0, 1.5, 2.0]
 
 
 def test_beats_per_bar_shrink_wraps_to_downbeat():
@@ -63,7 +67,7 @@ def test_beats_per_bar_shrink_wraps_to_downbeat():
     m.render(600)  # beats 0, 1, 2
     m.beats_per_bar = 2
     m.render(400)
-    assert [i for i, _ in drain(m)] == [0, 1, 2, 0, 1]
+    assert [b.index for b in drain(m)] == [0, 1, 2, 0, 1]
 
 
 def test_bpm_is_clamped():

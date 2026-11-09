@@ -3,13 +3,16 @@ import math
 import numpy as np
 
 from metronome.engine import Metronome
-from metronome.sound import make_click
+from metronome.sound import ACCENT, NORMAL, SUB, make_click
 
 
 def make(bpm=60, bpb=4, sr=1000, click_len=5):
     m = Metronome(bpm=bpm, beats_per_bar=bpb, samplerate=sr)
-    m.click = np.full(click_len, 0.5, dtype=np.float32)
-    m.accent = np.full(click_len, 1.0, dtype=np.float32)
+    m.buffers = {
+        ACCENT: np.full(click_len, 1.0, dtype=np.float32),
+        NORMAL: np.full(click_len, 0.5, dtype=np.float32),
+        SUB: np.full(click_len, 0.25, dtype=np.float32),
+    }
     return m
 
 
@@ -31,7 +34,7 @@ def test_long_run_no_cumulative_drift():
         beats.extend(drain(m))
     expected = math.ceil(blocks * block / interval)
     assert len(beats) == expected
-    for k, (_, t) in enumerate(beats):
+    for k, t in enumerate(b.time for b in beats):
         # one sample of truncation is fine, a growing error is not
         assert abs(t * sr - k * interval) < 1.0 + 1e-6, k
 
@@ -46,7 +49,7 @@ def test_long_run_irregular_block_sizes_match_grid():
     for _ in range(3000):
         n = int(rng.integers(1, 2000))
         m.render(n, start_time=pos / sr)
-        times += [t for _, t in drain(m)]
+        times += [b.time for b in drain(m)]
         pos += n
     assert len(times) == math.ceil(pos / interval)
     for k, t in enumerate(times):
@@ -70,13 +73,21 @@ def test_one_frame_blocks_equal_one_big_block():
 
 def test_click_longer_than_interval_overlaps_additively():
     m = make(bpm=300, click_len=300)  # interval 200, click 300
+    m.volume = 0.5  # keep sums below the [-1, 1] output clip
     out = m.render(1000)
-    assert out[0] == 1.0  # accent alone
-    assert out[199] == 1.0
-    assert math.isclose(out[200], 1.5)  # accent tail + click 1
-    assert math.isclose(out[299], 1.5)
-    assert math.isclose(out[300], 0.5)  # accent over, click 1 only
-    assert math.isclose(out[400], 1.0)  # clicks 1 and 2
+    assert out[0] == 0.5  # accent alone
+    assert out[199] == 0.5
+    assert math.isclose(out[200], 0.75)  # accent tail + click 1
+    assert math.isclose(out[299], 0.75)
+    assert math.isclose(out[300], 0.25)  # accent over, click 1 only
+    assert math.isclose(out[400], 0.5)  # clicks 1 and 2
+
+
+def test_overlapping_clicks_are_clipped_to_unit_range():
+    m = make(bpm=300, click_len=300)
+    out = m.render(1000)
+    assert out[200] == 1.0  # 1.5 before clipping
+    assert np.abs(out).max() <= 1.0
 
 
 def test_overlapping_clicks_split_across_blocks_match_whole():
@@ -97,13 +108,13 @@ def test_beats_per_bar_grow_continues_count():
     m.render(400)  # 0, 1
     m.beats_per_bar = 4
     m.render(600)
-    assert [i for i, _ in drain(m)] == [0, 1, 2, 3, 0]
+    assert [b.index for b in drain(m)] == [0, 1, 2, 3, 0]
 
 
 def test_beats_per_bar_zero_treated_as_one():
     m = make(bpm=300, bpb=0)
     m.render(600)
-    assert [i for i, _ in drain(m)] == [0, 0, 0]
+    assert [b.index for b in drain(m)] == [0, 0, 0]
 
 
 def test_reset_restarts_bar_and_clock():
@@ -112,7 +123,7 @@ def test_reset_restarts_bar_and_clock():
     drain(m)
     m.reset()
     out = m.render(3)
-    assert drain(m) == [(0, 0.0)]
+    assert [(b.index, b.time) for b in drain(m)] == [(0, 0.0)]
     assert out.tolist() == [1.0, 1.0, 1.0]
 
 
@@ -125,9 +136,9 @@ def test_reset_drops_pending_tail():
     assert out[:5].tolist() == [1.0] * 5
     m2 = make(bpm=30)
     m2.render(2)
-    m2._next_beat = 100.0  # no new beat in the next block
+    m2._beat_start = 100.0  # no new beat in the next block
     m2.reset()
-    m2._next_beat = 100.0
+    m2._beat_start = 100.0
     assert not m2.render(10).any()
 
 

@@ -1,9 +1,10 @@
-import tkinter as tk
 from tkinter import ttk
 
 import pytest
 
 from metronome import gui
+from metronome.engine import Beat
+from metronome.sound import ACCENT, MUTE, NORMAL
 
 
 def _fake_start(self):
@@ -12,22 +13,6 @@ def _fake_start(self):
 
 def _fake_stop(self):
     self._stream = None
-
-
-@pytest.fixture(scope="module")
-def tk_root():
-    # Repeatedly creating/destroying Tk() in one process is unreliable on
-    # Windows, so share one hidden root across the module.
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"Tk unavailable: {exc}")
-    # A withdrawn window can't take keyboard focus, so key events would all go
-    # to the root. Keep it mapped but off-screen instead.
-    root.geometry("+-3000+-3000")
-    root.update()
-    yield root
-    root.destroy()
 
 
 @pytest.fixture
@@ -88,10 +73,13 @@ def test_bpb_trace_updates_engine_and_dots(app):
     assert len(app.canvas.find_all()) == 6
 
 
-def test_bpb_out_of_range_clamped_in_engine(app):
+def test_bpb_out_of_range_clamped_on_commit(app):
     app.bpb_var.set(99)
+    assert app.engine.beats_per_bar == 4  # ignored while typing
+    app.commit_fields()
     assert app.engine.beats_per_bar == 12
     app.bpb_var.set(-3)
+    app.commit_fields()
     assert app.engine.beats_per_bar == 1
 
 
@@ -191,9 +179,157 @@ def test_toggle_clears_stale_beats(app):
 def test_poll_lights_dot_only_when_due(app):
     app.toggle()
     app.engine.stream_time = lambda: 1.0
-    app.engine.beats.put((2, 5.0))
+    beat = Beat(2, 5.0, NORMAL, True, 120)
+    app.engine.beats.put(beat)
     app._poll_beats()
-    assert app._pending == [(2, 5.0)]
+    assert app._pending == [beat]
     app.engine.stream_time = lambda: 5.0
     app._poll_beats()
     assert app._pending == []
+
+
+# --- v2 features -------------------------------------------------------------
+
+
+def _dot_fills(app):
+    return [app.canvas.itemcget(i, "fill") for i in app.canvas.find_all()]
+
+
+def test_dot_click_cycles_accent_levels(app):
+    x_beat1 = 2 + (gui.DOT_SIZE + gui.DOT_GAP) + gui.DOT_SIZE // 2
+    seen = []
+    for _ in range(3):
+        app.canvas.event_generate("<Button-1>", x=x_beat1, y=10)
+        app.root.update()
+        seen.append(app.engine.level_of(1))
+    assert seen == [MUTE, ACCENT, NORMAL]
+    assert app.engine.level_of(0) == ACCENT  # other beats untouched
+
+
+def test_click_in_gap_between_dots_does_nothing(app):
+    x_gap = 2 + gui.DOT_SIZE + gui.DOT_GAP // 2 + 1
+    app.canvas.event_generate("<Button-1>", x=x_gap, y=10)
+    app.root.update()
+    assert app.engine.accents == []
+
+
+def test_muted_dot_drawn_hollow(app):
+    app.cycle_accent(1)  # NORMAL -> MUTE
+    assert _dot_fills(app)[1] == ""
+
+
+def test_accents_survive_beats_per_bar_shrink_and_grow(app):
+    app.cycle_accent(3)  # beat 4 -> MUTE
+    app.bpb_var.set(2)
+    app.bpb_var.set(4)
+    assert app.engine.level_of(3) == MUTE
+
+
+def test_swing_enabled_only_for_eighths(app):
+    for name, enabled in (("Eighths", True), ("Triplets", False), ("Quarter notes", False)):
+        app.sub_var.set(name)
+        app.set_subdivision()
+        assert app.swing_scale.instate(["disabled"]) is not enabled
+    app.sub_var.set("Sixteenths")
+    app.set_subdivision()
+    assert app.engine.subdivision == 4
+
+
+def test_swing_and_volume_update_engine(app):
+    app.set_swing(66)
+    assert app.engine.swing == 0.66
+    assert app.swing_label.cget("text") == "66%"
+    app.set_volume(40)
+    assert app.engine.volume == 0.4
+
+
+def test_sound_selection_changes_buffers(app):
+    before = app.engine.buffers
+    app.sound_var.set("Wood")
+    app.set_sound()
+    assert app.engine.buffers is not before
+
+
+def test_trainers_apply_only_when_checked(app):
+    app.gap_play.set(3)
+    assert app.engine.gap_bars is None
+    app.gap_on.set(True)
+    app.apply_trainers()
+    assert app.engine.gap_bars == (3, 2)
+    app.speed_on.set(True)
+    app.apply_trainers()
+    assert app.engine.speed == (5, 4, 160)
+    app.speed_step.set(10)  # live update while enabled
+    assert app.engine.speed == (10, 4, 160)
+    app.gap_on.set(False)
+    app.apply_trainers()
+    assert app.engine.gap_bars is None
+
+
+def test_trainer_spinbox_clamps_on_commit(app):
+    app.speed_on.set(True)
+    app.speed_target.set(999)
+    app.commit_fields()
+    assert app.speed_target.get() == 300
+    assert app.engine.speed[2] == 300
+
+
+def test_speed_trainer_bump_updates_bpm_field(app):
+    app.toggle()
+    app.engine.stream_time = lambda: 10.0
+    app.engine.beats.put(Beat(0, 1.0, ACCENT, True, 125, bumped=True))
+    app._poll_beats()
+    assert app.bpm_var.get() == 125
+
+
+def test_stale_beat_without_bump_does_not_override_user_bpm(app):
+    app.toggle()
+    app.bpm_var.set(150)  # user change; queued beat still carries the old tempo
+    app.engine.stream_time = lambda: 10.0
+    app.engine.beats.put(Beat(0, 1.0, ACCENT, True, 120))
+    app._poll_beats()
+    assert app.bpm_var.get() == 150
+
+
+def _bump(app, bpm):
+    app.engine.bpm = bpm  # what the speed trainer does inside render()
+    app.engine.stream_time = lambda: 10.0
+    app.engine.beats.put(Beat(0, 1.0, ACCENT, True, bpm, bumped=True))
+    app._poll_beats()
+
+
+def test_stop_restores_tempo_before_speed_trainer_ramp(app):
+    app.bpm_var.set(100)
+    app.toggle()
+    _bump(app, 110)
+    _bump(app, 120)
+    assert app.bpm_var.get() == 120
+    app.toggle()  # stop
+    assert app.engine.bpm == 100
+    assert app.bpm_var.get() == 100
+
+
+def test_stop_restores_even_if_bump_not_yet_displayed(app):
+    app.bpm_var.set(100)
+    app.toggle()
+    app.engine.bpm = 130  # trainer bumped in the audio thread; beat still pending
+    app.toggle()
+    assert app.engine.bpm == 100
+    assert app.bpm_var.get() == 100
+
+
+def test_user_tempo_change_during_ramp_becomes_new_base(app):
+    app.bpm_var.set(100)
+    app.toggle()
+    _bump(app, 110)
+    app.nudge(5)  # user takes over at 115
+    _bump(app, 125)
+    app.toggle()
+    assert app.bpm_var.get() == 115
+
+
+def test_stop_without_trainer_keeps_tempo(app):
+    app.bpm_var.set(140)
+    app.toggle()
+    app.toggle()
+    assert app.bpm_var.get() == 140

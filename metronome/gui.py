@@ -102,7 +102,6 @@ class App(ttk.Frame):
     def _build(self) -> None:
         self.grid(sticky="nsew")
         self.columnconfigure(1, weight=1)
-        pad = {"pady": (8, 0)}
 
         ttk.Label(self, text="BPM").grid(row=0, column=0, sticky="w")
         bpm_spin = ttk.Spinbox(
@@ -119,19 +118,19 @@ class App(ttk.Frame):
             takefocus=False,
         ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
-        ttk.Label(self, text="Beats per bar").grid(row=1, column=0, sticky="w", **pad)
+        ttk.Label(self, text="Beats per bar").grid(row=1, column=0, sticky="w", pady=(8, 0))
         bpb_spin = ttk.Spinbox(self, from_=1, to=12, textvariable=self.bpb_var, width=5)
-        bpb_spin.grid(row=1, column=2, padx=(8, 0), **pad)
+        bpb_spin.grid(row=1, column=2, padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(self, text="Subdivision").grid(row=2, column=0, sticky="w", **pad)
+        ttk.Label(self, text="Subdivision").grid(row=2, column=0, sticky="w", pady=(8, 0))
         sub_box = ttk.Combobox(
             self, textvariable=self.sub_var, values=list(SUBDIVISION_NAMES),
             state="readonly", width=14,
         )
-        sub_box.grid(row=2, column=1, sticky="w", padx=(8, 0), **pad)
+        sub_box.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         sub_box.bind("<<ComboboxSelected>>", lambda e: self.set_subdivision())
 
-        ttk.Label(self, text="Swing").grid(row=3, column=0, sticky="w", **pad)
+        ttk.Label(self, text="Swing").grid(row=3, column=0, sticky="w", pady=(8, 0))
         self.swing_scale = ttk.Scale(
             self,
             from_=round(MIN_SWING * 100),
@@ -141,19 +140,19 @@ class App(ttk.Frame):
             command=lambda v: self.set_swing(round(float(v))),
             takefocus=False,
         )
-        self.swing_scale.grid(row=3, column=1, sticky="ew", padx=(8, 0), **pad)
+        self.swing_scale.grid(row=3, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
         self.swing_label = ttk.Label(self, width=5)
-        self.swing_label.grid(row=3, column=2, padx=(8, 0), **pad)
+        self.swing_label.grid(row=3, column=2, padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(self, text="Sound").grid(row=4, column=0, sticky="w", **pad)
+        ttk.Label(self, text="Sound").grid(row=4, column=0, sticky="w", pady=(8, 0))
         sound_box = ttk.Combobox(
             self, textvariable=self.sound_var, values=list(SOUNDS),
             state="readonly", width=14,
         )
-        sound_box.grid(row=4, column=1, sticky="w", padx=(8, 0), **pad)
+        sound_box.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         sound_box.bind("<<ComboboxSelected>>", lambda e: self.set_sound())
 
-        ttk.Label(self, text="Volume").grid(row=5, column=0, sticky="w", **pad)
+        ttk.Label(self, text="Volume").grid(row=5, column=0, sticky="w", pady=(8, 0))
         ttk.Scale(
             self,
             from_=0,
@@ -162,9 +161,9 @@ class App(ttk.Frame):
             variable=self.volume_var,
             command=lambda v: self.set_volume(round(float(v))),
             takefocus=False,
-        ).grid(row=5, column=1, sticky="ew", padx=(8, 0), **pad)
+        ).grid(row=5, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
         self.volume_label = ttk.Label(self, width=5)
-        self.volume_label.grid(row=5, column=2, padx=(8, 0), **pad)
+        self.volume_label.grid(row=5, column=2, padx=(8, 0), pady=(8, 0))
 
         self.canvas = tk.Canvas(self, height=DOT_SIZE + 4, highlightthickness=0)
         self.canvas.grid(row=6, column=0, columnspan=3, sticky="ew", pady=12)

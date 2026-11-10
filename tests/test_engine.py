@@ -43,7 +43,7 @@ def test_reported_times_use_stream_clock():
 def test_accent_on_first_beat_of_bar():
     m = make(bpm=300, bpb=3)  # beat every 200 samples
     signal = m.render(1000)
-    assert [b.index for b in drain(m)] == [0, 1, 2, 0, 1]
+    assert [b.beat_in_bar for b in drain(m)] == [0, 1, 2, 0, 1]
     assert signal[[0, 200, 400, 600, 800]].tolist() == [1.0, 0.5, 0.5, 1.0, 0.5]
 
 
@@ -67,7 +67,7 @@ def test_beats_per_bar_shrink_wraps_to_downbeat():
     m.render(600)  # beats 0, 1, 2
     m.beats_per_bar = 2
     m.render(400)
-    assert [b.index for b in drain(m)] == [0, 1, 2, 0, 1]
+    assert [b.beat_in_bar for b in drain(m)] == [0, 1, 2, 0, 1]
 
 
 def test_bpm_is_clamped():

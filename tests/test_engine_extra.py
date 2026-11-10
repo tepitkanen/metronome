@@ -108,13 +108,13 @@ def test_beats_per_bar_grow_continues_count():
     m.render(400)  # 0, 1
     m.beats_per_bar = 4
     m.render(600)
-    assert [b.index for b in drain(m)] == [0, 1, 2, 3, 0]
+    assert [b.beat_in_bar for b in drain(m)] == [0, 1, 2, 3, 0]
 
 
 def test_beats_per_bar_zero_treated_as_one():
     m = make(bpm=300, bpb=0)
     m.render(600)
-    assert [b.index for b in drain(m)] == [0, 0, 0]
+    assert [b.beat_in_bar for b in drain(m)] == [0, 0, 0]
 
 
 def test_reset_restarts_bar_and_clock():
@@ -123,7 +123,7 @@ def test_reset_restarts_bar_and_clock():
     drain(m)
     m.reset()
     out = m.render(3)
-    assert [(b.index, b.time) for b in drain(m)] == [(0, 0.0)]
+    assert [(b.beat_in_bar, b.time) for b in drain(m)] == [(0, 0.0)]
     assert out.tolist() == [1.0, 1.0, 1.0]
 
 

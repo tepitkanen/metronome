@@ -51,7 +51,7 @@ def test_subdivision_tick_positions(sub, expected):
 def test_subdivision_ticks_are_not_reported_as_beats():
     m = make(bpm=60, sub=4)
     m.render(2000)
-    assert [b.index for b in drain(m)] == [0, 1]
+    assert [b.beat_in_bar for b in drain(m)] == [0, 1]
 
 
 def test_swing_delays_offbeat_eighth():
@@ -114,7 +114,7 @@ def test_muted_beat_is_silent_with_its_subdivisions_but_still_reported():
     m.accents = [ACCENT, MUTE]
     out = m.render(2000)
     assert onsets(out) == {0: 1.0, 500: 0.25}
-    assert [(b.index, b.level) for b in drain(m)] == [(0, ACCENT), (1, MUTE)]
+    assert [(b.beat_in_bar, b.level) for b in drain(m)] == [(0, ACCENT), (1, MUTE)]
 
 
 # --- volume & sounds ---------------------------------------------------------

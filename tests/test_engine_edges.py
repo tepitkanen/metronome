@@ -77,7 +77,7 @@ def test_gap_follows_bar_counter_when_beats_per_bar_shrinks_mid_bar():
     m.beats_per_bar = 2
     m.render(1500)
     beats = drain(m)
-    assert [(b.index, b.audible) for b in beats[:8]] == [
+    assert [(b.beat_in_bar, b.audible) for b in beats[:8]] == [
         (0, True), (1, True), (2, True), (0, False), (1, False), (0, True), (1, True), (0, False),
     ]
 

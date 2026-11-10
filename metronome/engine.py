@@ -14,7 +14,7 @@ MAX_SWING = 0.75  # offbeat on the last sixteenth: hard swing
 class Beat(NamedTuple):
     """One main beat, as reported to the GUI (subdivision ticks are not reported)."""
 
-    index: int  # position in the bar, 0 = downbeat
+    beat_in_bar: int  # position in the bar, 0 = downbeat
     time: float  # stream time at which the click reaches the speakers
     level: int  # ACCENT, NORMAL or MUTE
     audible: bool  # False inside a muted gap-trainer bar

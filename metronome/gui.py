@@ -266,7 +266,7 @@ class App(ttk.Frame):
             level = self.engine.level_of(i)
             x = 2 + i * (DOT_SIZE + DOT_GAP)
             outline = COLOR_OUTLINE_MUTE if level == MUTE else ""
-            if active is not None and i == active.index:
+            if active is not None and i == active.beat_in_bar:
                 if not active.audible or level == MUTE:
                     fill = COLOR_SILENT
                 else:

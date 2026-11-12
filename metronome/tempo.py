@@ -38,3 +38,21 @@ class TapTempo:
         if interval <= 0:
             return None
         return clamp_bpm(60.0 / interval)
+
+
+# Lower bound of each traditional tempo marking (common modern ranges).
+TEMPO_NAMES = (
+    (200, "Prestissimo"),
+    (168, "Presto"),
+    (120, "Allegro"),
+    (108, "Moderato"),
+    (76, "Andante"),
+    (66, "Adagio"),
+    (60, "Larghetto"),
+    (40, "Largo"),
+)
+
+
+def tempo_name(bpm: int) -> str:
+    """The Italian tempo marking for a BPM, e.g. 120 -> "Allegro"."""
+    return next((name for lo, name in TEMPO_NAMES if bpm >= lo), "Grave")

@@ -125,14 +125,41 @@ def test_shortcuts_work_on_root(app):
     assert app.engine.running
 
 
-def test_nudge_and_toggle_ignored_when_spinbox_focused(app):
+def test_nudge_ignored_when_spinbox_focused(app):
     spin = _spinboxes(app)[0]
     calls = []
     app.nudge = calls.append
-    for seq in ("<Up>", "<Down>", "<Shift-Up>", "<space>"):
+    for seq in ("<Up>", "<Down>", "<Shift-Up>"):
         _key(app, seq, widget=spin)
     assert calls == []
     assert not app.engine.running
+
+
+def _bpm_entry(app):
+    hero = app.tempo_label.master
+    return next(w for w in hero.winfo_children() if isinstance(w, ttk.Entry))
+
+
+def test_space_in_bpm_entry_commits_and_toggles(app):
+    entry = _bpm_entry(app)
+    entry.focus_force()
+    app.root.update()
+    entry.delete(0, "end")
+    entry.insert(0, "999")  # out of range: ignored while typing
+    _key(app, "<space>", widget=entry)
+    assert app.engine.running
+    assert app.engine.bpm == 300  # clamped on commit
+    assert entry.get() == "300"  # no space inserted
+    assert app.root.focus_get() is app.root  # other shortcuts work again
+    _key(app, "<space>")
+    assert not app.engine.running
+
+
+def test_space_in_spinbox_toggles(app):
+    spin = _spinboxes(app)[0]
+    _key(app, "<space>", widget=spin)
+    assert app.engine.running
+    assert " " not in spin.get()
 
 
 def test_tap_key_ignored_when_spinbox_focused(app):
@@ -333,3 +360,27 @@ def test_stop_without_trainer_keeps_tempo(app):
     app.toggle()
     app.toggle()
     assert app.bpm_var.get() == 140
+
+
+# --- tempo hero / layout -------------------------------------------------------
+
+
+def test_tempo_label_follows_bpm(app):
+    app.bpm_var.set(60)
+    assert app.tempo_label.cget("text") == "Larghetto"
+    app.nudge(60)
+    assert app.tempo_label.cget("text") == "Allegro"
+
+
+def test_mouse_wheel_over_tempo_nudges(app):
+    app.bpm_var.set(100)
+    app.tempo_label.event_generate("<MouseWheel>", delta=120)
+    assert app.engine.bpm == 101
+    app.tempo_label.event_generate("<MouseWheel>", delta=-120)
+    app.tempo_label.event_generate("<MouseWheel>", delta=-120)
+    assert app.engine.bpm == 99
+
+
+def test_beat_canvas_width_fits_dots(app):
+    app.bpb_var.set(3)
+    assert int(app.canvas.cget("width")) == 4 + 3 * gui.DOT_SIZE + 2 * gui.DOT_GAP

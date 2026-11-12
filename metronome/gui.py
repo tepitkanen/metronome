@@ -7,11 +7,13 @@ import sounddevice as sd
 
 from metronome.engine import MAX_SWING, MIN_SWING, Beat, Metronome
 from metronome.sound import ACCENT, MUTE, NORMAL, SOUNDS
-from metronome.tempo import MAX_BPM, MIN_BPM, TapTempo, clamp_bpm
+from metronome.tempo import MAX_BPM, MIN_BPM, TapTempo, clamp_bpm, tempo_name
 
 POLL_MS = 10
-DOT_SIZE = 28
-DOT_GAP = 8
+DOT_SIZE = 40
+DOT_GAP = 12
+FONT = "Segoe UI"
+COLOR_MUTED_TEXT = "#777777"
 COLOR_IDLE = "#d0d0d0"
 COLOR_IDLE_ACCENT = "#f3b4b4"
 COLOR_OUTLINE_MUTE = "#999999"
@@ -103,11 +105,11 @@ class App(ttk.Frame):
         self.grid(sticky="nsew")
         self.columnconfigure(1, weight=1)
 
-        ttk.Label(self, text="BPM").grid(row=0, column=0, sticky="w")
-        bpm_spin = ttk.Spinbox(
-            self, from_=MIN_BPM, to=MAX_BPM, textvariable=self.bpm_var, width=5
-        )
-        bpm_spin.grid(row=0, column=2, padx=(8, 0))
+        style = ttk.Style(self.root)
+        style.configure("Nudge.TButton", font=(FONT, 16), padding=(4, 6))
+        style.configure("Primary.TButton", font=(FONT, 14, "bold"), padding=(0, 10))
+
+        bpm_entry = self._build_hero(row=0)
         ttk.Scale(
             self,
             from_=MIN_BPM,
@@ -116,21 +118,34 @@ class App(ttk.Frame):
             command=lambda v: self.bpm_var.set(clamp_bpm(float(v))),
             variable=self.bpm_var,
             takefocus=False,
-        ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        ).grid(row=1, column=0, columnspan=2, sticky="ew")
+        ttk.Button(
+            self, text="Tap", command=self.tap, takefocus=False, width=6
+        ).grid(row=1, column=2, padx=(8, 0))
 
-        ttk.Label(self, text="Beats per bar").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        # Sized to fit the dots exactly (see _draw_dots) and left unstretched, so it centers.
+        self.canvas = tk.Canvas(self, height=DOT_SIZE + 4, highlightthickness=0)
+        self.canvas.grid(row=2, column=0, columnspan=3, pady=(20, 16))
+
+        self.start_btn = ttk.Button(
+            self, text="Start", command=self.toggle, takefocus=False,
+            style="Primary.TButton",
+        )
+        self.start_btn.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+
+        ttk.Label(self, text="Beats per bar").grid(row=4, column=0, sticky="w", pady=(8, 0))
         bpb_spin = ttk.Spinbox(self, from_=1, to=12, textvariable=self.bpb_var, width=5)
-        bpb_spin.grid(row=1, column=2, padx=(8, 0), pady=(8, 0))
+        bpb_spin.grid(row=4, column=2, padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(self, text="Subdivision").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Subdivision").grid(row=5, column=0, sticky="w", pady=(8, 0))
         sub_box = ttk.Combobox(
             self, textvariable=self.sub_var, values=list(SUBDIVISION_NAMES),
             state="readonly", width=14,
         )
-        sub_box.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        sub_box.grid(row=5, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         sub_box.bind("<<ComboboxSelected>>", lambda e: self.set_subdivision())
 
-        ttk.Label(self, text="Swing").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Swing").grid(row=6, column=0, sticky="w", pady=(8, 0))
         self.swing_scale = ttk.Scale(
             self,
             from_=round(MIN_SWING * 100),
@@ -140,19 +155,19 @@ class App(ttk.Frame):
             command=lambda v: self.set_swing(round(float(v))),
             takefocus=False,
         )
-        self.swing_scale.grid(row=3, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+        self.swing_scale.grid(row=6, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
         self.swing_label = ttk.Label(self, width=5)
-        self.swing_label.grid(row=3, column=2, padx=(8, 0), pady=(8, 0))
+        self.swing_label.grid(row=6, column=2, padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(self, text="Sound").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Sound").grid(row=7, column=0, sticky="w", pady=(8, 0))
         sound_box = ttk.Combobox(
             self, textvariable=self.sound_var, values=list(SOUNDS),
             state="readonly", width=14,
         )
-        sound_box.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        sound_box.grid(row=7, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         sound_box.bind("<<ComboboxSelected>>", lambda e: self.set_sound())
 
-        ttk.Label(self, text="Volume").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Volume").grid(row=8, column=0, sticky="w", pady=(8, 0))
         ttk.Scale(
             self,
             from_=0,
@@ -161,32 +176,19 @@ class App(ttk.Frame):
             variable=self.volume_var,
             command=lambda v: self.set_volume(round(float(v))),
             takefocus=False,
-        ).grid(row=5, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+        ).grid(row=8, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
         self.volume_label = ttk.Label(self, width=5)
-        self.volume_label.grid(row=5, column=2, padx=(8, 0), pady=(8, 0))
+        self.volume_label.grid(row=8, column=2, padx=(8, 0), pady=(8, 0))
 
-        self.canvas = tk.Canvas(self, height=DOT_SIZE + 4, highlightthickness=0)
-        self.canvas.grid(row=6, column=0, columnspan=3, sticky="ew", pady=12)
-
-        buttons = ttk.Frame(self)
-        buttons.grid(row=7, column=0, columnspan=3)
-        self.start_btn = ttk.Button(
-            buttons, text="Start", command=self.toggle, takefocus=False, width=10
-        )
-        self.start_btn.grid(row=0, column=0, padx=4)
-        ttk.Button(
-            buttons, text="Tap", command=self.tap, takefocus=False, width=10
-        ).grid(row=0, column=1, padx=4)
-
-        spins = [bpm_spin, bpb_spin, *self._build_practice(row=8)]
+        spins = [bpm_entry, bpb_spin, *self._build_practice(row=9)]
 
         ttk.Label(
             self,
-            text="Space start/stop · ↑/↓ ±1 · Shift+↑/↓ ±10 · T tap\n"
+            text="Space start/stop · ↑/↓ or scroll ±1 · Shift+↑/↓ ±10 · T tap\n"
             "Click a dot to cycle accent → normal → mute",
-            foreground="#777",
+            foreground=COLOR_MUTED_TEXT,
             justify="center",
-        ).grid(row=9, column=0, columnspan=3, pady=(12, 0))
+        ).grid(row=10, column=0, columnspan=3, pady=(12, 0))
 
         # Return/Escape in a spinbox hands focus back so shortcuts work again;
         # leaving the field shows the value actually in use.
@@ -194,11 +196,43 @@ class App(ttk.Frame):
             spin.bind("<Return>", lambda e: self.root.focus_set())
             spin.bind("<Escape>", lambda e: self.root.focus_set())
             spin.bind("<FocusOut>", lambda e: self.commit_fields())
+            spin.bind("<space>", self._space_in_field)
         self.canvas.bind("<Button-1>", self._on_dot_click)
 
         self.set_subdivision()
         self.set_swing(self.swing_var.get())
         self.set_volume(self.volume_var.get())
+
+    def _build_hero(self, row: int) -> ttk.Entry:
+        """The tempo display: marking, big editable BPM number and -/+ buttons."""
+        hero = ttk.Frame(self)
+        hero.grid(row=row, column=0, columnspan=3, pady=(0, 8))
+        self.tempo_label = ttk.Label(
+            hero, text=tempo_name(self.engine.bpm), font=(FONT, 12),
+            foreground=COLOR_MUTED_TEXT,
+        )
+        self.tempo_label.grid(row=0, column=0, columnspan=3)
+        for column, delta, text in ((0, -1, "−"), (2, 1, "+")):
+            ttk.Button(
+                hero, text=text, width=3, style="Nudge.TButton", takefocus=False,
+                command=lambda d=delta: self.nudge(d),
+            ).grid(row=1, column=column)
+        entry = ttk.Entry(
+            hero, textvariable=self.bpm_var, width=3, justify="center",
+            font=(FONT, 48, "bold"),
+        )
+        entry.grid(row=1, column=1, padx=12)
+        ttk.Label(hero, text="BPM", foreground=COLOR_MUTED_TEXT).grid(
+            row=2, column=0, columnspan=3
+        )
+        for widget in (hero, *hero.winfo_children()):
+            widget.bind("<MouseWheel>", self._on_wheel)
+        return entry
+
+    def _on_wheel(self, event) -> str:
+        self.commit_fields()  # a half-typed number snaps back before nudging
+        self.nudge(1 if event.delta > 0 else -1)
+        return "break"
 
     def _build_practice(self, row: int) -> list[ttk.Spinbox]:
         frame = ttk.LabelFrame(self, text="Practice", padding=8)
@@ -247,6 +281,13 @@ class App(ttk.Frame):
         for seq, handler in bindings.items():
             self.root.bind(seq, self._unless_typing(handler))
 
+    def _space_in_field(self, _event) -> str:
+        """A number never contains a space, so Space in a field commits it and starts/stops."""
+        self.commit_fields()
+        self.root.focus_set()
+        self.toggle()
+        return "break"  # don't let the Entry insert the space
+
     def _unless_typing(self, handler):
         """Skip shortcuts while a text field has focus, so typing works normally."""
 
@@ -262,7 +303,9 @@ class App(ttk.Frame):
 
     def _draw_dots(self, active: Beat | None = None) -> None:
         self.canvas.delete("all")
-        for i in range(self.engine.beats_per_bar):
+        n = self.engine.beats_per_bar
+        self.canvas.configure(width=4 + n * DOT_SIZE + (n - 1) * DOT_GAP)
+        for i in range(n):
             level = self.engine.level_of(i)
             x = 2 + i * (DOT_SIZE + DOT_GAP)
             outline = COLOR_OUTLINE_MUTE if level == MUTE else ""
@@ -353,6 +396,7 @@ class App(ttk.Frame):
 
     def _set_bpm(self, value: int) -> None:
         self.engine.bpm = value
+        self.tempo_label.configure(text=tempo_name(value))
         if not self._showing_bump:
             self._base_bpm = self.engine.bpm
 

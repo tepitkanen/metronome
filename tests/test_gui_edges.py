@@ -292,3 +292,49 @@ def test_status_shows_speed_and_both_then_clears_on_stop(app):
     assert app.status_label.cget("text") == "Silent bar · 125 → 160 BPM"
     app.toggle()  # stop
     assert app.status_label.cget("text") == ""
+
+
+def test_dark_theme_uses_clam_and_palette_background(app):
+    assert ttk.Style(app.root).theme_use() == "clam"
+    assert app.canvas.cget("background") == gui.COLOR_BG
+    assert app.root.cget("background") == gui.COLOR_BG
+
+
+def test_default_size_uses_default_geometry(app):
+    app.rescale(app.winfo_width(), app.winfo_height())
+    assert (app.dot_size, app.dot_gap, app.bar_height) == (
+        gui.DOT_SIZE, gui.DOT_GAP, gui.BAR_HEIGHT
+    )
+    assert app.hero_font.cget("size") == gui.HERO_FONT_SIZE
+
+
+def test_smaller_than_default_never_shrinks(app):
+    app.rescale(10, 10)
+    assert app.dot_size == gui.DOT_SIZE
+    assert app.hero_font.cget("size") == gui.HERO_FONT_SIZE
+
+
+def test_larger_window_scales_strip_and_hero(app):
+    app.bpb_var.set(4)
+    w, h = app.winfo_reqwidth(), app.winfo_reqheight()
+    app.event_generate("<Configure>", width=2 * w, height=2 * h)
+    assert app.dot_size == 2 * gui.DOT_SIZE
+    assert app.bar_height == 2 * gui.BAR_HEIGHT
+    assert app.hero_font.cget("size") == 2 * gui.HERO_FONT_SIZE
+    assert len(app.canvas.find_all()) == 4
+    assert int(app.canvas.cget("width")) == 4 + 4 * app.dot_size + 3 * app.dot_gap
+
+    # Hit-testing follows the scaled geometry: the unscaled middle of beat 1 now
+    # falls inside beat 0, and the scaled middle of beat 1 cycles beat 1.
+    app.engine.accents = [ACCENT, NORMAL, NORMAL, NORMAL]
+    assert app._dot_at(2 + gui.DOT_SIZE + gui.DOT_GAP + gui.DOT_SIZE // 2) == 0
+    assert app._dot_at(2 + app.dot_size + app.dot_gap + app.dot_size // 2) == 1
+    app.cycle_accent(1)
+    assert app.engine.level_of(1) == MUTE
+    assert len(app.canvas.find_all()) == 4
+
+
+def test_widening_alone_does_not_scale(app):
+    """Height limits the scale too, so the bottom rows never get pushed out of view."""
+    app.rescale(3 * app.winfo_reqwidth(), app.winfo_reqheight())
+    assert app.dot_size == gui.DOT_SIZE

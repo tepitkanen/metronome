@@ -1,5 +1,6 @@
 import queue
 import tkinter as tk
+import tkinter.font as tkfont
 from collections.abc import Callable
 from tkinter import messagebox, ttk
 
@@ -16,13 +17,29 @@ BAR_HEIGHT = round(DOT_SIZE * 1.5)  # accent bar; normal and mute bars are short
 BAR_SCALE = {ACCENT: 1.0, NORMAL: 0.6, MUTE: 0.25}  # level readable from height, not only colour
 ACCENT_HINT = "Click: accent → normal → mute"
 FONT = "Segoe UI"
-COLOR_MUTED_TEXT = "#777777"
-COLOR_IDLE = "#d0d0d0"
-COLOR_IDLE_ACCENT = "#f3b4b4"
-COLOR_OUTLINE_MUTE = "#999999"
-COLOR_BEAT = "#3b82f6"
-COLOR_ACCENT = "#ef4444"
-COLOR_SILENT = "#c7d2fe"  # lit beat that makes no sound (muted beat / gap bar)
+HERO_FONT_SIZE = 48  # BPM number at scale 1; grows with the window
+
+# --- palette (dark): every colour the GUI uses ------------------------------
+COLOR_BG = "#16181c"  # window, frames, labels, beat strip
+COLOR_SURFACE = "#262a31"  # buttons, slider handles, field arrows
+COLOR_SURFACE_HOVER = "#323842"
+COLOR_SURFACE_PRESSED = "#3d444f"
+COLOR_FIELD = "#1f2227"  # entry/spinbox/combobox fields, slider troughs
+COLOR_BORDER = "#3a4048"
+COLOR_TEXT = "#e6e8eb"  # 14.5:1 on COLOR_BG
+COLOR_MUTED_TEXT = "#9aa1ab"  # 6.8:1 on COLOR_BG
+COLOR_DISABLED = "#5f6670"
+COLOR_PRIMARY = "#38bdf8"  # Start button; same hue as a lit beat
+COLOR_PRIMARY_HOVER = "#7dd3fc"
+COLOR_PRIMARY_PRESSED = "#0ea5e9"
+COLOR_PRIMARY_TEXT = "#0b1220"  # 8.7:1 on COLOR_PRIMARY
+COLOR_SELECT = "#0c4a6e"  # text selection / dropdown highlight
+COLOR_IDLE = "#454b55"
+COLOR_IDLE_ACCENT = "#8a4550"
+COLOR_OUTLINE_MUTE = "#7c8590"
+COLOR_BEAT = "#38bdf8"
+COLOR_ACCENT = "#ff4d5e"
+COLOR_SILENT = "#6b7fa6"  # lit beat that makes no sound (muted beat / gap bar)
 
 SUBDIVISION_NAMES = {"Quarter notes": 1, "Eighths": 2, "Triplets": 3, "Sixteenths": 4}
 NEXT_LEVEL = {ACCENT: NORMAL, NORMAL: MUTE, MUTE: ACCENT}
@@ -94,9 +111,19 @@ class App(ttk.Frame):
         ):
             self._field(var, lo, hi, lambda _v: self.apply_trainers())
 
+        # Beat strip geometry and hero font at the current scale (1 = default size).
+        self._scale = 1.0
+        self.dot_size, self.dot_gap, self.bar_height = DOT_SIZE, DOT_GAP, BAR_HEIGHT
+        self.hero_font = tkfont.Font(root=root, family=FONT, size=HERO_FONT_SIZE, weight="bold")
+
+        self._apply_theme()
         self._build()
         self._bind_keys()
         self._draw_dots()
+        self.update_idletasks()
+        self._natural_width = self.winfo_reqwidth()
+        self._hero_height = self.hero_entry.winfo_reqheight()  # at scale 1
+        self.bind("<Configure>", lambda e: self.rescale(e.width, e.height))
         self.after(POLL_MS, self._poll_beats)
 
     def _field(self, var: tk.IntVar, lo: int, hi: int, apply: Callable[[int], None]) -> None:
@@ -104,13 +131,93 @@ class App(ttk.Frame):
 
     # --- layout -------------------------------------------------------------
 
+    def _apply_theme(self) -> None:
+        """Dark theme on clam (the native Windows themes ignore most colour options)."""
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        self.root.configure(background=COLOR_BG)
+        flat = {"lightcolor": COLOR_SURFACE, "darkcolor": COLOR_SURFACE}
+        style.configure(
+            ".", background=COLOR_BG, foreground=COLOR_TEXT, bordercolor=COLOR_BORDER,
+            fieldbackground=COLOR_FIELD, troughcolor=COLOR_FIELD, arrowcolor=COLOR_TEXT,
+            insertcolor=COLOR_TEXT, selectbackground=COLOR_SELECT,
+            selectforeground=COLOR_TEXT, focuscolor=COLOR_PRIMARY, **flat,
+        )
+        style.map(
+            ".", background=[("disabled", COLOR_BG)],
+            foreground=[("disabled", COLOR_DISABLED)],
+            selectbackground=[("!focus", COLOR_SELECT)],
+        )
+        style.configure("TButton", background=COLOR_SURFACE, **flat)
+        style.map(
+            "TButton",
+            background=[("disabled", COLOR_BG), ("pressed", COLOR_SURFACE_PRESSED),
+                        ("active", COLOR_SURFACE_HOVER)],
+            lightcolor=[("pressed", COLOR_SURFACE_PRESSED)],
+            darkcolor=[("pressed", COLOR_SURFACE_PRESSED)],
+            bordercolor=[("alternate", COLOR_BORDER)],
+        )
+        style.configure("Nudge.TButton", font=(FONT, 16), padding=(4, 6))
+        primary = {"lightcolor": COLOR_PRIMARY, "darkcolor": COLOR_PRIMARY}
+        style.configure(
+            "Primary.TButton", font=(FONT, 14, "bold"), padding=(0, 10),
+            background=COLOR_PRIMARY, foreground=COLOR_PRIMARY_TEXT,
+            bordercolor=COLOR_PRIMARY, **primary,
+        )
+        style.map(
+            "Primary.TButton",
+            background=[("pressed", COLOR_PRIMARY_PRESSED), ("active", COLOR_PRIMARY_HOVER)],
+            lightcolor=[("pressed", COLOR_PRIMARY_PRESSED), ("active", COLOR_PRIMARY_HOVER)],
+            darkcolor=[("pressed", COLOR_PRIMARY_PRESSED), ("active", COLOR_PRIMARY_HOVER)],
+        )
+        style.configure(
+            "Toolbutton", background=COLOR_BG, lightcolor=COLOR_BG, darkcolor=COLOR_BG
+        )
+        style.map(
+            "Toolbutton",
+            background=[("pressed", COLOR_SURFACE_PRESSED), ("active", COLOR_SURFACE_HOVER)],
+        )
+        field = {"lightcolor": COLOR_FIELD, "darkcolor": COLOR_FIELD}
+        for name in ("TEntry", "TSpinbox", "TCombobox"):
+            style.configure(name, background=COLOR_SURFACE, **field)
+            style.map(
+                name,
+                fieldbackground=[("readonly", COLOR_FIELD), ("disabled", COLOR_BG)],
+                foreground=[("disabled", COLOR_DISABLED), ("readonly", COLOR_TEXT)],
+                background=[("pressed", COLOR_SURFACE_PRESSED), ("active", COLOR_SURFACE_HOVER),
+                            ("readonly", COLOR_SURFACE)],
+                bordercolor=[("focus", COLOR_PRIMARY)],
+                arrowcolor=[("disabled", COLOR_DISABLED)],
+            )
+        style.configure(
+            "TCheckbutton", indicatorbackground=COLOR_FIELD, indicatorforeground=COLOR_PRIMARY,
+            upperbordercolor=COLOR_BORDER, lowerbordercolor=COLOR_BORDER,
+        )
+        style.map(
+            "TCheckbutton",
+            background=[("active", COLOR_BG)],
+            indicatorbackground=[("pressed", COLOR_SURFACE_PRESSED), ("disabled", COLOR_BG)],
+        )
+        style.configure("Horizontal.TScale", background=COLOR_SURFACE, troughcolor=COLOR_FIELD,
+                        **flat)
+        style.map(
+            "Horizontal.TScale",
+            background=[("disabled", COLOR_BG), ("pressed", COLOR_SURFACE_PRESSED),
+                        ("active", COLOR_SURFACE_HOVER)],
+            lightcolor=[("disabled", COLOR_BG)],
+            darkcolor=[("disabled", COLOR_BG)],
+            bordercolor=[("disabled", COLOR_SURFACE)],
+            troughcolor=[("disabled", COLOR_BG)],
+        )
+        # The Combobox dropdown is a plain Tk listbox, styled through the option database.
+        self.root.option_add("*TCombobox*Listbox.background", COLOR_FIELD)
+        self.root.option_add("*TCombobox*Listbox.foreground", COLOR_TEXT)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", COLOR_SELECT)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", COLOR_TEXT)
+
     def _build(self) -> None:
         self.grid(sticky="nsew")
         self.columnconfigure(1, weight=1)
-
-        style = ttk.Style(self.root)
-        style.configure("Nudge.TButton", font=(FONT, 16), padding=(4, 6))
-        style.configure("Primary.TButton", font=(FONT, 14, "bold"), padding=(0, 10))
 
         bpm_entry = self._build_hero(row=0)
         ttk.Scale(
@@ -129,7 +236,9 @@ class App(ttk.Frame):
         # Sized to fit the bars exactly (see _draw_dots) and left unstretched, so it centers.
         strip = ttk.Frame(self)
         strip.grid(row=2, column=0, columnspan=3, pady=(20, 16))
-        self.canvas = tk.Canvas(strip, height=BAR_HEIGHT + 4, highlightthickness=0)
+        self.canvas = tk.Canvas(
+            strip, height=BAR_HEIGHT + 4, highlightthickness=0, background=COLOR_BG
+        )
         self.canvas.grid(row=0, column=0)
         # Blank (but still taking its space) unless the mouse is over a beat.
         self.accent_hint = ttk.Label(strip, text="", foreground=COLOR_MUTED_TEXT)
@@ -258,9 +367,8 @@ class App(ttk.Frame):
                 hero, text=text, width=3, style="Nudge.TButton", takefocus=False,
                 command=lambda d=delta: self.nudge(d),
             ).grid(row=1, column=column)
-        entry = ttk.Entry(
-            hero, textvariable=self.bpm_var, width=3, justify="center",
-            font=(FONT, 48, "bold"),
+        entry = self.hero_entry = ttk.Entry(
+            hero, textvariable=self.bpm_var, width=3, justify="center", font=self.hero_font,
         )
         entry.grid(row=1, column=1, padx=12)
         ttk.Label(hero, text="BPM", foreground=COLOR_MUTED_TEXT).grid(
@@ -344,10 +452,11 @@ class App(ttk.Frame):
     def _draw_dots(self, active: Beat | None = None) -> None:
         self.canvas.delete("all")
         n = self.engine.beats_per_bar
-        self.canvas.configure(width=4 + n * DOT_SIZE + (n - 1) * DOT_GAP)
+        size, gap, height = self.dot_size, self.dot_gap, self.bar_height
+        self.canvas.configure(width=4 + n * size + (n - 1) * gap, height=height + 4)
         for i in range(n):
             level = self.engine.level_of(i)
-            x = 2 + i * (DOT_SIZE + DOT_GAP)
+            x = 2 + i * (size + gap)
             outline = COLOR_OUTLINE_MUTE if level == MUTE else ""
             if active is not None and i == active.beat_in_bar:
                 if not active.audible or level == MUTE:
@@ -356,17 +465,43 @@ class App(ttk.Frame):
                     fill = COLOR_ACCENT if level == ACCENT else COLOR_BEAT
             else:
                 fill = {ACCENT: COLOR_IDLE_ACCENT, NORMAL: COLOR_IDLE, MUTE: ""}[level]
-            bottom = 2 + BAR_HEIGHT  # common baseline
-            top = bottom - round(BAR_HEIGHT * BAR_SCALE[level])
+            bottom = 2 + height  # common baseline
+            top = bottom - round(height * BAR_SCALE[level])
             self.canvas.create_rectangle(
-                x, top, x + DOT_SIZE, bottom, fill=fill, outline=outline, width=2
+                x, top, x + size, bottom, fill=fill, outline=outline, width=2
             )
 
     def _dot_at(self, x: int) -> int | None:
-        i, offset = divmod(x - 2, DOT_SIZE + DOT_GAP)
-        if 0 <= i < self.engine.beats_per_bar and offset <= DOT_SIZE:
+        i, offset = divmod(x - 2, self.dot_size + self.dot_gap)
+        if 0 <= i < self.engine.beats_per_bar and offset <= self.dot_size:
             return i
         return None
+
+    def rescale(self, width: int, height: int) -> None:
+        """Grow the BPM number and beat strip with the window; never below the default size.
+
+        Compared against the size the layout needs at scale 1, so a window that merely
+        fits its content (e.g. after adding beats or opening a section) stays at 1.
+        Height counts too, so scaled-up widgets never push the bottom rows out of view.
+        """
+        n = self.engine.beats_per_bar
+        strip = 4 + n * DOT_SIZE + (n - 1) * DOT_GAP
+        pad = 2 * 16  # the frame's padding
+        natural_w = max(self._natural_width, strip + pad)
+        extra_h = (self.bar_height - BAR_HEIGHT) + (
+            self.hero_entry.winfo_reqheight() - self._hero_height
+        )
+        natural_h = self.winfo_reqheight() - extra_h
+        raw = min(width / natural_w, height / natural_h)
+        scale = max(1.0, round(raw * 20) / 20)  # 5% steps: redraw only on a real change
+        if scale == self._scale:
+            return
+        self._scale = scale
+        self.dot_size = round(DOT_SIZE * scale)
+        self.dot_gap = round(DOT_GAP * scale)
+        self.bar_height = round(BAR_HEIGHT * scale)
+        self.hero_font.configure(size=round(HERO_FONT_SIZE * scale))
+        self._draw_dots()
 
     def _on_dot_hover(self, event) -> None:
         self._show_hover(self._dot_at(event.x) is not None)
@@ -517,8 +652,12 @@ class App(ttk.Frame):
 def main() -> None:
     root = tk.Tk()
     root.title("Metronome")
-    root.resizable(False, False)
+    root.resizable(True, True)
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
     app = App(root)
+    root.update_idletasks()
+    root.minsize(root.winfo_reqwidth(), root.winfo_reqheight())  # grow, never shrink
 
     def on_close():
         try:

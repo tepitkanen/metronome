@@ -316,6 +316,9 @@ class App(ttk.Frame):
         def toggle() -> None:
             shown = body.winfo_manager() == "grid"
             if shown:
+                # A hidden field would keep the keyboard focus and swallow the shortcuts.
+                if str(self.root.tk.call("focus")).startswith(f"{body}."):
+                    self.root.focus_set()
                 body.grid_remove()
             else:
                 body.grid()

@@ -380,3 +380,17 @@ def test_opening_section_grows_a_user_sized_window(app):
         root.geometry("")  # back to content-sized for the other tests
         root.minsize(1, 1)
         root.update()
+
+
+def test_collapsing_section_returns_focus_from_its_hidden_field(app):
+    root = app.root
+    button, body = _section_parts(app.practice_summary)
+    button.invoke()
+    root.update()
+    spin = next(w for w in _descendants(body) if isinstance(w, ttk.Spinbox))
+    spin.focus_force()
+    root.update()
+    assert root.focus_get() is spin
+    button.invoke()  # takefocus=False: the click leaves focus in the field
+    root.update()
+    assert root.focus_get() is root  # Space/T shortcuts work again

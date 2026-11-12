@@ -131,21 +131,24 @@ class App(ttk.Frame):
             self, text="Start", command=self.toggle, takefocus=False,
             style="Primary.TButton",
         )
-        self.start_btn.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        self.start_btn.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+        # Live trainer status; an empty label keeps its line, so nothing jumps while running.
+        self.status_label = ttk.Label(self, foreground=COLOR_MUTED_TEXT)
+        self.status_label.grid(row=4, column=0, columnspan=3, pady=(0, 4))
 
-        ttk.Label(self, text="Beats per bar").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Beats per bar").grid(row=5, column=0, sticky="w", pady=(8, 0))
         bpb_spin = ttk.Spinbox(self, from_=1, to=12, textvariable=self.bpb_var, width=5)
-        bpb_spin.grid(row=4, column=2, padx=(8, 0), pady=(8, 0))
+        bpb_spin.grid(row=5, column=2, padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(self, text="Subdivision").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Subdivision").grid(row=6, column=0, sticky="w", pady=(8, 0))
         sub_box = ttk.Combobox(
             self, textvariable=self.sub_var, values=list(SUBDIVISION_NAMES),
             state="readonly", width=14,
         )
-        sub_box.grid(row=5, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        sub_box.grid(row=6, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         sub_box.bind("<<ComboboxSelected>>", lambda e: self.set_subdivision())
 
-        ttk.Label(self, text="Swing").grid(row=6, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Swing").grid(row=7, column=0, sticky="w", pady=(8, 0))
         self.swing_scale = ttk.Scale(
             self,
             from_=round(MIN_SWING * 100),
@@ -155,31 +158,11 @@ class App(ttk.Frame):
             command=lambda v: self.set_swing(round(float(v))),
             takefocus=False,
         )
-        self.swing_scale.grid(row=6, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+        self.swing_scale.grid(row=7, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
         self.swing_label = ttk.Label(self, width=5)
-        self.swing_label.grid(row=6, column=2, padx=(8, 0), pady=(8, 0))
+        self.swing_label.grid(row=7, column=2, padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(self, text="Sound").grid(row=7, column=0, sticky="w", pady=(8, 0))
-        sound_box = ttk.Combobox(
-            self, textvariable=self.sound_var, values=list(SOUNDS),
-            state="readonly", width=14,
-        )
-        sound_box.grid(row=7, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        sound_box.bind("<<ComboboxSelected>>", lambda e: self.set_sound())
-
-        ttk.Label(self, text="Volume").grid(row=8, column=0, sticky="w", pady=(8, 0))
-        ttk.Scale(
-            self,
-            from_=0,
-            to=100,
-            orient="horizontal",
-            variable=self.volume_var,
-            command=lambda v: self.set_volume(round(float(v))),
-            takefocus=False,
-        ).grid(row=8, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
-        self.volume_label = ttk.Label(self, width=5)
-        self.volume_label.grid(row=8, column=2, padx=(8, 0), pady=(8, 0))
-
+        self._build_sound(row=8)
         spins = [bpm_entry, bpb_spin, *self._build_practice(row=9)]
 
         ttk.Label(
@@ -201,7 +184,56 @@ class App(ttk.Frame):
 
         self.set_subdivision()
         self.set_swing(self.swing_var.get())
-        self.set_volume(self.volume_var.get())
+        self.set_volume(self.volume_var.get())  # also fills the section summaries
+
+    def _section(self, row: int, title: str) -> tuple[ttk.Frame, ttk.Label]:
+        """A collapsible section (starts collapsed): header toggle + summary, and a body."""
+        section = ttk.Frame(self)
+        section.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        section.columnconfigure(1, weight=1)
+        body = ttk.Frame(section, padding=(12, 4, 0, 0))
+        body.grid(row=1, column=0, columnspan=2, sticky="ew")
+        body.grid_remove()
+
+        def toggle() -> None:
+            shown = body.winfo_manager() == "grid"
+            if shown:
+                body.grid_remove()
+            else:
+                body.grid()
+            button.configure(text=f"{'▸' if shown else '▾'} {title}")
+
+        button = ttk.Button(
+            section, text=f"▸ {title}", command=toggle, takefocus=False, style="Toolbutton"
+        )
+        button.grid(row=0, column=0, sticky="w")
+        summary = ttk.Label(section, foreground=COLOR_MUTED_TEXT)
+        summary.grid(row=0, column=1, sticky="e")
+        return body, summary
+
+    def _build_sound(self, row: int) -> None:
+        body, self.sound_summary = self._section(row, "Sound")
+        body.columnconfigure(1, weight=1)
+        ttk.Label(body, text="Sound").grid(row=0, column=0, sticky="w")
+        sound_box = ttk.Combobox(
+            body, textvariable=self.sound_var, values=list(SOUNDS),
+            state="readonly", width=14,
+        )
+        sound_box.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        sound_box.bind("<<ComboboxSelected>>", lambda e: self.set_sound())
+
+        ttk.Label(body, text="Volume").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Scale(
+            body,
+            from_=0,
+            to=100,
+            orient="horizontal",
+            variable=self.volume_var,
+            command=lambda v: self.set_volume(round(float(v))),
+            takefocus=False,
+        ).grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+        self.volume_label = ttk.Label(body, width=5)
+        self.volume_label.grid(row=1, column=2, padx=(8, 0), pady=(8, 0))
 
     def _build_hero(self, row: int) -> ttk.Entry:
         """The tempo display: marking, big editable BPM number and -/+ buttons."""
@@ -235,8 +267,7 @@ class App(ttk.Frame):
         return "break"
 
     def _build_practice(self, row: int) -> list[ttk.Spinbox]:
-        frame = ttk.LabelFrame(self, text="Practice", padding=8)
-        frame.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        frame, self.practice_summary = self._section(row, "Practice")
 
         def spin(var, lo, hi, column, r):
             s = ttk.Spinbox(frame, from_=lo, to=hi, textvariable=var, width=4)
@@ -358,7 +389,17 @@ class App(ttk.Frame):
                     finally:
                         self._showing_bump = False
                 self._draw_dots(active=due[-1])
+                self._show_status(due[-1])
         self.after(POLL_MS, self._poll_beats)
+
+    def _show_status(self, beat: Beat) -> None:
+        """Trainer status from the latest due beat; empty when no trainer is on."""
+        parts = []
+        if self.engine.gap_bars is not None:
+            parts.append("Playing" if beat.audible else "Silent bar")
+        if self.engine.speed is not None:
+            parts.append(f"{beat.bpm} → {self.engine.speed[2]} BPM")
+        self.status_label.configure(text=" · ".join(parts))
 
     # --- actions ------------------------------------------------------------
 
@@ -366,6 +407,7 @@ class App(ttk.Frame):
         if self.engine.running:
             self.engine.stop()
             self.start_btn.configure(text="Start")
+            self.status_label.configure(text="")
             self._pending.clear()
             if self.engine.bpm != self._base_bpm:  # undo the speed trainer's ramp
                 self.bpm_var.set(self._base_bpm)
@@ -417,12 +459,26 @@ class App(ttk.Frame):
 
     def set_sound(self) -> None:
         self.engine.set_sound(self.sound_var.get())
+        self._update_summaries()
         self.root.focus_set()
 
     def set_volume(self, pct: int) -> None:
         self.volume_var.set(pct)
         self.engine.volume = pct / 100
         self.volume_label.configure(text=f"{pct}%")
+        self._update_summaries()
+
+    def _update_summaries(self) -> None:
+        """Refresh the collapsed-section summaries from the settings in effect."""
+        self.sound_summary.configure(
+            text=f"{self.sound_var.get()} · {round(self.engine.volume * 100)}%"
+        )
+        parts = []
+        if self.engine.gap_bars is not None:
+            parts.append("Gap {}/{}".format(*self.engine.gap_bars))
+        if self.engine.speed is not None:
+            parts.append("Speed +{}/{} bars → {}".format(*self.engine.speed))
+        self.practice_summary.configure(text=" · ".join(parts) or "Off")
 
     def apply_trainers(self) -> None:
         """Push the Practice settings to the engine (using each field's last valid value)."""
@@ -437,6 +493,7 @@ class App(ttk.Frame):
             if self.speed_on.get()
             else None
         )
+        self._update_summaries()
 
 
 def main() -> None:

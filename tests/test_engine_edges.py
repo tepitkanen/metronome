@@ -36,6 +36,15 @@ def test_swing_offbeat_positions_over_many_beats():
     assert subs == [k * 1000 + 600 for k in range(50)]
 
 
+def test_swung_sixteenth_positions_across_block_boundaries():
+    m = make(bpm=60, sub=4)
+    m.swing = 0.7
+    out = np.concatenate([m.render(300) for _ in range(50 * 1000 // 300)])
+    subs = sorted(i for i, v in onsets(out).items() if v == 0.25)
+    expected = [k * 1000 + off for k in range(50) for off in (350, 500, 850)]
+    assert subs == [t for t in expected if t < len(out)]
+
+
 def test_bpm_change_mid_beat_with_subdivisions_keeps_latched_interval():
     m = make(bpm=60, sub=2)
     a = m.render(300)  # beat 0 at 0, sub due at 500

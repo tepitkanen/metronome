@@ -7,8 +7,8 @@ from metronome.sound import ACCENT, MUTE, NORMAL, SOUNDS, SUB
 from metronome.tempo import clamp_bpm
 
 SUBDIVISIONS = (1, 2, 3, 4)  # quarter, eighths, triplets, sixteenths
-MIN_SWING = 0.5  # offbeat eighth exactly halfway: straight
-MAX_SWING = 0.75  # offbeat on the last sixteenth: hard swing
+MIN_SWING = 0.5  # second note of each pair exactly halfway: straight
+MAX_SWING = 0.75  # second note at 3/4 of its pair: hard swing
 
 
 class Beat(NamedTuple):
@@ -124,7 +124,11 @@ class Metronome:
             if self._tick == 0:
                 pos_f = self._beat_start
             else:
-                frac = swing if sub == 2 else self._tick / sub
+                if sub in (2, 4):  # swing delays the second note of each pair
+                    pair, second = divmod(self._tick, 2)
+                    frac = (pair + second * swing) * 2 / sub
+                else:
+                    frac = self._tick / sub
                 pos_f = self._beat_start + self._beat_interval * frac
             if pos_f >= frames:
                 break

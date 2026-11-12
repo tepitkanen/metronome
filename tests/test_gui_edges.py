@@ -43,7 +43,7 @@ def test_subdivision_combobox_event_sets_engine_and_swing_state(app):
         sub_box.event_generate("<<ComboboxSelected>>")
         app.root.update()
         assert app.engine.subdivision == value
-        assert app.swing_scale.instate(["!disabled"]) == (value == 2)
+        assert app.swing_scale.instate(["!disabled"]) == (value in (2, 4))
 
 
 def test_sound_combobox_event_swaps_buffers(app):

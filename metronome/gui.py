@@ -363,7 +363,7 @@ class App(ttk.Frame):
     def set_subdivision(self) -> None:
         sub = SUBDIVISION_NAMES.get(self.sub_var.get(), 1)
         self.engine.subdivision = sub
-        self.swing_scale.state(["!disabled"] if sub == 2 else ["disabled"])
+        self.swing_scale.state(["!disabled"] if sub in (2, 4) else ["disabled"])
         self.root.focus_set()
 
     def set_swing(self, pct: int) -> None:

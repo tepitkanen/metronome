@@ -225,13 +225,16 @@ def test_accents_survive_beats_per_bar_shrink_and_grow(app):
     assert app.engine.level_of(3) == MUTE
 
 
-def test_swing_enabled_only_for_eighths(app):
-    for name, enabled in (("Eighths", True), ("Triplets", False), ("Quarter notes", False)):
+def test_swing_enabled_only_for_eighths_and_sixteenths(app):
+    for name, enabled in (
+        ("Eighths", True),
+        ("Triplets", False),
+        ("Quarter notes", False),
+        ("Sixteenths", True),
+    ):
         app.sub_var.set(name)
         app.set_subdivision()
         assert app.swing_scale.instate(["disabled"]) is not enabled
-    app.sub_var.set("Sixteenths")
-    app.set_subdivision()
     assert app.engine.subdivision == 4
 
 

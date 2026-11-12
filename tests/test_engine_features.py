@@ -60,6 +60,12 @@ def test_swing_delays_offbeat_eighth():
     assert onsets(m.render(2000)) == {0: 1.0, 660: 0.25, 1000: 0.5, 1660: 0.25}
 
 
+def test_swing_delays_offbeat_sixteenths():
+    m = make(bpm=60, sub=4)
+    m.swing = 0.7
+    assert onsets(m.render(1000)) == {0: 1.0, 350: 0.25, 500: 0.25, 850: 0.25}
+
+
 def test_swing_is_clamped_and_ignored_for_other_subdivisions():
     m = make(bpm=60, sub=2)
     m.swing = 5.0

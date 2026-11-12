@@ -12,6 +12,9 @@ from metronome.tempo import MAX_BPM, MIN_BPM, TapTempo, clamp_bpm, tempo_name
 POLL_MS = 10
 DOT_SIZE = 40
 DOT_GAP = 12
+BAR_HEIGHT = round(DOT_SIZE * 1.5)  # accent bar; normal and mute bars are shorter
+BAR_SCALE = {ACCENT: 1.0, NORMAL: 0.6, MUTE: 0.25}  # level readable from height, not only colour
+ACCENT_HINT = "Click: accent → normal → mute"
 FONT = "Segoe UI"
 COLOR_MUTED_TEXT = "#777777"
 COLOR_IDLE = "#d0d0d0"
@@ -123,9 +126,14 @@ class App(ttk.Frame):
             self, text="Tap", command=self.tap, takefocus=False, width=6
         ).grid(row=1, column=2, padx=(8, 0))
 
-        # Sized to fit the dots exactly (see _draw_dots) and left unstretched, so it centers.
-        self.canvas = tk.Canvas(self, height=DOT_SIZE + 4, highlightthickness=0)
-        self.canvas.grid(row=2, column=0, columnspan=3, pady=(20, 16))
+        # Sized to fit the bars exactly (see _draw_dots) and left unstretched, so it centers.
+        strip = ttk.Frame(self)
+        strip.grid(row=2, column=0, columnspan=3, pady=(20, 16))
+        self.canvas = tk.Canvas(strip, height=BAR_HEIGHT + 4, highlightthickness=0)
+        self.canvas.grid(row=0, column=0)
+        # Blank (but still taking its space) unless the mouse is over a beat.
+        self.accent_hint = ttk.Label(strip, text="", foreground=COLOR_MUTED_TEXT)
+        self.accent_hint.grid(row=1, column=0, pady=(4, 0))
 
         self.start_btn = ttk.Button(
             self, text="Start", command=self.toggle, takefocus=False,
@@ -184,8 +192,7 @@ class App(ttk.Frame):
 
         ttk.Label(
             self,
-            text="Space start/stop · ↑/↓ or scroll ±1 · Shift+↑/↓ ±10 · T tap\n"
-            "Click a dot to cycle accent → normal → mute",
+            text="Space start/stop · ↑/↓ or scroll ±1 · Shift+↑/↓ ±10 · T tap",
             foreground=COLOR_MUTED_TEXT,
             justify="center",
         ).grid(row=10, column=0, columnspan=3, pady=(12, 0))
@@ -198,6 +205,8 @@ class App(ttk.Frame):
             spin.bind("<FocusOut>", lambda e: self.commit_fields())
             spin.bind("<space>", self._space_in_field)
         self.canvas.bind("<Button-1>", self._on_dot_click)
+        self.canvas.bind("<Motion>", self._on_dot_hover)
+        self.canvas.bind("<Leave>", lambda e: self._show_hover(False))
 
         self.set_subdivision()
         self.set_swing(self.swing_var.get())
@@ -299,7 +308,7 @@ class App(ttk.Frame):
 
         return wrapped
 
-    # --- beat dots ----------------------------------------------------------
+    # --- beat strip: one bar per beat, its height and colour show the level ---
 
     def _draw_dots(self, active: Beat | None = None) -> None:
         self.canvas.delete("all")
@@ -316,8 +325,10 @@ class App(ttk.Frame):
                     fill = COLOR_ACCENT if level == ACCENT else COLOR_BEAT
             else:
                 fill = {ACCENT: COLOR_IDLE_ACCENT, NORMAL: COLOR_IDLE, MUTE: ""}[level]
-            self.canvas.create_oval(
-                x, 2, x + DOT_SIZE, 2 + DOT_SIZE, fill=fill, outline=outline, width=2
+            bottom = 2 + BAR_HEIGHT  # common baseline
+            top = bottom - round(BAR_HEIGHT * BAR_SCALE[level])
+            self.canvas.create_rectangle(
+                x, top, x + DOT_SIZE, bottom, fill=fill, outline=outline, width=2
             )
 
     def _dot_at(self, x: int) -> int | None:
@@ -325,6 +336,13 @@ class App(ttk.Frame):
         if 0 <= i < self.engine.beats_per_bar and offset <= DOT_SIZE:
             return i
         return None
+
+    def _on_dot_hover(self, event) -> None:
+        self._show_hover(self._dot_at(event.x) is not None)
+
+    def _show_hover(self, over_beat: bool) -> None:
+        self.canvas.configure(cursor="hand2" if over_beat else "")
+        self.accent_hint.configure(text=ACCENT_HINT if over_beat else "")
 
     def _on_dot_click(self, event) -> None:
         self.root.focus_set()

@@ -166,3 +166,38 @@ def test_click_beyond_last_dot_or_left_of_first_does_nothing(app):
     for x in (2 + 4 * (gui.DOT_SIZE + gui.DOT_GAP) + 5, 400, 0, 1):
         _click(app, x)
     assert app.engine.accents == before
+
+
+def test_bar_heights_ordered_accent_normal_mute_on_common_baseline(app):
+    app.bpb_var.set(3)
+    app.engine.accents = [ACCENT, NORMAL, MUTE]
+    app._draw_dots()
+    coords = [app.canvas.coords(i) for i in app.canvas.find_all()]
+    heights = [bottom - top for _, top, _, bottom in coords]
+    assert heights[0] > heights[1] > heights[2] > 0
+    assert len({bottom for *_, bottom in coords}) == 1
+    for i, (x0, _, x1, _) in enumerate(coords):
+        assert (x0, x1) == (2 + i * (gui.DOT_SIZE + gui.DOT_GAP), x0 + gui.DOT_SIZE)
+
+
+def _motion(app, x):
+    app.canvas.event_generate("<Motion>", x=x, y=10)
+    app.root.update()
+
+
+def test_hover_over_beat_shows_hint_and_hand_cursor_and_leave_clears(app):
+    x_beat1 = 2 + (gui.DOT_SIZE + gui.DOT_GAP) + gui.DOT_SIZE // 2
+    assert app.accent_hint.cget("text") == ""
+    _motion(app, x_beat1)
+    assert str(app.canvas.cget("cursor")) == "hand2"
+    assert app.accent_hint.cget("text") == gui.ACCENT_HINT
+
+    _motion(app, 2 + gui.DOT_SIZE + gui.DOT_GAP // 2 + 1)  # gap between beats
+    assert str(app.canvas.cget("cursor")) == ""
+    assert app.accent_hint.cget("text") == ""
+
+    _motion(app, x_beat1)
+    app.canvas.event_generate("<Leave>")
+    app.root.update()
+    assert str(app.canvas.cget("cursor")) == ""
+    assert app.accent_hint.cget("text") == ""

@@ -611,3 +611,33 @@ def test_commit_normalises_decimal_text(app):
     _type(app.hero_entry, "120.7")
     _key(app, "<Return>", widget=app.hero_entry)
     assert app.hero_entry.get() == str(app.engine.bpm)
+
+
+def test_window_can_shrink_back_after_content_grows_while_scaled(app):
+    """Opening a section while enlarged must not raise the minimum to the scaled size."""
+    root = app.root
+    try:
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(0, weight=1)
+        root.geometry("")
+        root.update()
+        root.minsize(root.winfo_reqwidth(), root.winfo_reqheight())  # as main() does
+        root.geometry(f"{round(1.5 * root.winfo_width())}x{round(1.5 * root.winfo_height())}")
+        root.update()
+        assert app._scale > 1.0
+        button, _ = _section_parts(app.practice_summary)
+        button.invoke()  # content grows while scaled
+        root.update()
+        assert root.minsize()[1] < root.winfo_reqheight()  # not the scaled size
+
+        root.geometry("1x1")  # shrink as far as the window allows
+        root.update()
+        root.update()  # let the after_idle minsize refresh run
+        assert app._scale == 1.0
+        assert root.winfo_height() >= root.winfo_reqheight()  # back to normal, nothing cut off
+    finally:
+        root.columnconfigure(0, weight=0)
+        root.rowconfigure(0, weight=0)
+        root.geometry("")
+        root.minsize(1, 1)
+        root.update()

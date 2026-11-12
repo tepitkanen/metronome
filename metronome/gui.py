@@ -124,8 +124,7 @@ class App(ttk.Frame):
         self._bind_keys()
         self._draw_dots()
         self.update_idletasks()
-        self._natural_width = self.winfo_reqwidth()
-        self._hero_height = self.hero_entry.winfo_reqheight()  # at scale 1
+        self._natural = (self.winfo_reqwidth(), self.winfo_reqheight())  # layout at scale 1
         self.bind("<Configure>", lambda e: self.rescale(e.width, e.height))
         self.after(POLL_MS, self._poll_beats)
 
@@ -487,20 +486,16 @@ class App(ttk.Frame):
     def rescale(self, width: int, height: int) -> None:
         """Grow the BPM number and beat strip with the window; never below the default size.
 
-        Compared against the size the layout needs at scale 1, so a window that merely
-        fits its content (e.g. after adding beats or opening a section) stays at 1.
-        Height counts too, so scaled-up widgets never push the bottom rows out of view.
+        Compared against the layout's size at scale 1 (`_natural`, re-measured by
+        `_fit_window` whenever content changes), so a window that merely fits its content
+        stays at 1. Height counts too, so scaled-up widgets never push the bottom rows
+        out of view.
         """
-        n = self.engine.beats_per_bar
-        strip = 4 + n * DOT_SIZE + (n - 1) * DOT_GAP
-        pad = 2 * 16  # the frame's padding
-        natural_w = max(self._natural_width, strip + pad)
-        extra_h = (self.bar_height - BAR_HEIGHT) + (
-            self.hero_entry.winfo_reqheight() - self._hero_height
-        )
-        natural_h = self.winfo_reqheight() - extra_h
+        natural_w, natural_h = self._natural
         raw = min(width / natural_w, height / natural_h)
-        scale = max(1.0, round(raw * 20) / 20)  # 5% steps: redraw only on a real change
+        self._set_scale(max(1.0, round(raw * 20) / 20))  # 5% steps: redraw only on change
+
+    def _set_scale(self, scale: float) -> None:
         if scale == self._scale:
             return
         self._scale = scale
@@ -514,18 +509,23 @@ class App(ttk.Frame):
         self._draw_dots()
 
     def _fit_window(self) -> None:
-        """Grow the window if new content (a section opened, more beats) no longer fits.
+        """Re-measure the layout after content changed (a section toggled, beats changed).
 
-        Once the user has resized the window, Tk stops sizing it to its content, so
-        anything added afterwards would be cut off at the edge.
+        The size at scale 1 becomes the reference for rescale() and the window's minimum,
+        so a window enlarged meanwhile can still shrink back to normal. The window grows
+        if the content no longer fits: once the user has resized it, Tk stops sizing it
+        to its content, so anything added afterwards would be cut off at the edge.
         """
         root = self.root
+        self._set_scale(1.0)  # measure unscaled; restored below
         root.update_idletasks()
+        self._natural = (self.winfo_reqwidth(), self.winfo_reqheight())
         req_w, req_h = root.winfo_reqwidth(), root.winfo_reqheight()
         root.minsize(req_w, req_h)
-        width, height = root.winfo_width(), root.winfo_height()
-        if req_w > width or req_h > height:
-            root.geometry(f"{max(width, req_w)}x{max(height, req_h)}")
+        width, height = max(root.winfo_width(), req_w), max(root.winfo_height(), req_h)
+        if (width, height) != (root.winfo_width(), root.winfo_height()):
+            root.geometry(f"{width}x{height}")
+        self.rescale(width, height)
 
     def _on_dot_hover(self, event) -> None:
         self._show_hover(self._dot_at(event.x) is not None)

@@ -320,6 +320,7 @@ class App(ttk.Frame):
             else:
                 body.grid()
             button.configure(text=f"{'▸' if shown else '▾'} {title}")
+            self._fit_window()
 
         button = ttk.Button(
             section, text=f"▸ {title}", command=toggle, takefocus=False, style="Toolbutton"
@@ -501,7 +502,24 @@ class App(ttk.Frame):
         self.dot_gap = round(DOT_GAP * scale)
         self.bar_height = round(BAR_HEIGHT * scale)
         self.hero_font.configure(size=round(HERO_FONT_SIZE * scale))
+        # A ttk.Entry keeps its old centering offset after its font grows, which clips the
+        # number; re-applying the font makes it lay the text out again.
+        self.hero_entry.configure(font=self.hero_font)
         self._draw_dots()
+
+    def _fit_window(self) -> None:
+        """Grow the window if new content (a section opened, more beats) no longer fits.
+
+        Once the user has resized the window, Tk stops sizing it to its content, so
+        anything added afterwards would be cut off at the edge.
+        """
+        root = self.root
+        root.update_idletasks()
+        req_w, req_h = root.winfo_reqwidth(), root.winfo_reqheight()
+        root.minsize(req_w, req_h)
+        width, height = root.winfo_width(), root.winfo_height()
+        if req_w > width or req_h > height:
+            root.geometry(f"{max(width, req_w)}x{max(height, req_h)}")
 
     def _on_dot_hover(self, event) -> None:
         self._show_hover(self._dot_at(event.x) is not None)
@@ -598,6 +616,7 @@ class App(ttk.Frame):
     def _set_bpb(self, value: int) -> None:
         self.engine.beats_per_bar = value
         self._draw_dots()
+        self._fit_window()
 
     def set_subdivision(self) -> None:
         sub = SUBDIVISION_NAMES.get(self.sub_var.get(), 1)

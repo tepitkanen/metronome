@@ -338,3 +338,45 @@ def test_widening_alone_does_not_scale(app):
     """Height limits the scale too, so the bottom rows never get pushed out of view."""
     app.rescale(3 * app.winfo_reqwidth(), app.winfo_reqheight())
     assert app.dot_size == gui.DOT_SIZE
+
+
+def test_scaled_bpm_number_is_not_clipped(app):
+    """The entry re-lays out its centered text after the font grows (else '120' is cut off)."""
+    root = app.root
+    try:
+        # Like main(): let the App frame fill the window, so resizing reaches rescale().
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(0, weight=1)
+        root.update()
+        # Really enlarge the window: a bare rescale() call is undone by the next real
+        # <Configure>, because the test window otherwise just fits its content.
+        root.geometry(f"{round(1.5 * root.winfo_width())}x{round(1.5 * root.winfo_height())}")
+        root.update()
+        assert app.hero_font.cget("size") > gui.HERO_FONT_SIZE
+        entry = app.hero_entry
+        text_w = app.hero_font.measure(entry.get())
+        first_x = entry.bbox(0)[0]
+        assert first_x + text_w <= entry.winfo_width()
+    finally:
+        root.columnconfigure(0, weight=0)
+        root.rowconfigure(0, weight=0)
+        root.geometry("")  # back to content-sized for the other tests
+        root.update()
+
+
+def test_opening_section_grows_a_user_sized_window(app):
+    root = app.root
+    try:
+        root.update()
+        # Simulate a hand resize: from now on Tk no longer sizes the window to its content.
+        root.geometry(f"{root.winfo_width()}x{root.winfo_height()}")
+        root.update()
+        button, body = _section_parts(app.practice_summary)
+        button.invoke()
+        root.update()
+        assert root.winfo_height() >= root.winfo_reqheight()
+        assert body.winfo_ismapped()
+    finally:
+        root.geometry("")  # back to content-sized for the other tests
+        root.minsize(1, 1)
+        root.update()

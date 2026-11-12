@@ -8,7 +8,7 @@ import pytest
 from metronome import gui
 from metronome.engine import Beat
 from metronome.sound import ACCENT, MUTE, NORMAL, SOUNDS
-from tests.test_gui import _fake_start, _fake_stop, _key
+from tests.test_gui import _bump, _fake_start, _fake_stop, _key
 
 
 @pytest.fixture
@@ -394,3 +394,222 @@ def test_collapsing_section_returns_focus_from_its_hidden_field(app):
     button.invoke()  # takefocus=False: the click leaves focus in the field
     root.update()
     assert root.focus_get() is root  # Space/T shortcuts work again
+
+
+# --- QA round: tempo hero, spaces in fields, strip, resizing --------------------
+
+
+def _type(entry, text):
+    entry.focus_force()
+    entry.master.update()
+    entry.delete(0, "end")
+    entry.insert(0, text)
+
+
+@pytest.mark.parametrize("key", ["<Return>", "<Escape>"])
+@pytest.mark.parametrize(("text", "want"), [("999", 300), ("5", 30), ("abc", 120), ("", 120)])
+def test_bpm_entry_return_escape_commit_and_free_focus(app, key, text, want):
+    entry = app.hero_entry
+    _type(entry, text)
+    _key(app, key, widget=entry)
+    assert app.root.focus_get() is app.root
+    assert app.engine.bpm == want
+    assert entry.get() == str(want)
+    assert app.tempo_label.cget("text") == gui.tempo_name(want)
+
+
+def test_bpm_entry_focus_out_commits(app):
+    entry = app.hero_entry
+    _type(entry, "1000")
+    app.root.focus_force()
+    app.root.update()
+    assert entry.get() == "300"
+    assert app.engine.bpm == 300
+
+
+def test_bpm_entry_live_valid_text_updates_engine_and_label(app):
+    _type(app.hero_entry, "60")
+    assert app.engine.bpm == 60
+    assert app.tempo_label.cget("text") == "Larghetto"
+
+
+def test_hero_plus_minus_buttons_nudge_and_clamp(app):
+    hero = app.tempo_label.master
+    minus, plus = [w for w in hero.winfo_children() if isinstance(w, ttk.Button)]
+    app.bpm_var.set(120)
+    plus.invoke()
+    assert app.engine.bpm == 121
+    minus.invoke()
+    minus.invoke()
+    assert app.engine.bpm == 119
+    app.bpm_var.set(300)
+    plus.invoke()
+    assert app.engine.bpm == 300
+    app.bpm_var.set(30)
+    minus.invoke()
+    assert app.engine.bpm == 30
+
+
+def test_wheel_over_entry_nudges_and_clamps_half_typed_text(app):
+    _type(app.hero_entry, "999")
+    app.hero_entry.event_generate("<MouseWheel>", delta=-120)
+    assert app.engine.bpm == 299
+    assert app.hero_entry.get() == "299"
+    app.bpm_var.set(300)
+    app.hero_entry.event_generate("<MouseWheel>", delta=120)
+    assert app.engine.bpm == 300
+
+
+def test_wheel_on_every_hero_widget_nudges(app):
+    hero = app.tempo_label.master
+    app.bpm_var.set(100)
+    for widget in (hero, *hero.winfo_children()):
+        widget.event_generate("<MouseWheel>", delta=120)
+    assert app.engine.bpm == 100 + len(hero.winfo_children()) + 1
+
+
+def test_tap_button_sets_tempo(app):
+    ticks = iter([0.0, 0.4])
+    app.tapper.clock = lambda: next(ticks)
+    tap = next(w for w in app.winfo_children() if isinstance(w, ttk.Button) and w.cget("text") == "Tap")
+    tap.invoke()
+    tap.invoke()
+    assert app.engine.bpm == 150
+
+
+def test_tempo_label_follows_speed_trainer_bump(app):
+    app.bpm_var.set(100)
+    _poll(app, Beat(0, 0.0, NORMAL, True, 125, True))
+    assert app.bpm_var.get() == 125
+    assert app.tempo_label.cget("text") == "Allegro"
+
+
+def _open(app, summary):
+    button, body = _section_parts(summary)
+    button.invoke()
+    app.root.update()
+    return body
+
+
+def test_space_in_every_practice_spinbox_toggles_and_frees_focus(app):
+    body = _open(app, app.practice_summary)
+    spins = [w for w in _descendants(body) if isinstance(w, ttk.Spinbox)]
+    assert len(spins) == 5
+    for spin in spins:
+        before = spin.get()
+        _key(app, "<space>", widget=spin)
+        assert spin.get() == before  # no space inserted
+        assert app.root.focus_get() is app.root
+        assert app.engine.running
+        _key(app, "<space>")
+        assert not app.engine.running
+
+
+def test_space_in_practice_spinbox_commits_out_of_range(app):
+    body = _open(app, app.practice_summary)
+    spin = next(w for w in _descendants(body) if isinstance(w, ttk.Spinbox))
+    _type(spin, "99")
+    _key(app, "<space>", widget=spin)
+    assert app.gap_play.get() == 16
+
+
+def test_space_in_beats_per_bar_spinbox_commits_and_toggles(app):
+    spin = _spinboxes_top(app)[0]
+    _type(spin, "50")
+    _key(app, "<space>", widget=spin)
+    assert app.engine.beats_per_bar == 12
+    assert app.engine.running
+
+
+def _spinboxes_top(app):
+    return [w for w in app.winfo_children() if isinstance(w, ttk.Spinbox)]
+
+
+def test_space_in_sound_combobox_does_nothing(app):
+    body = _open(app, app.sound_summary)
+    box = next(w for w in _descendants(body) if isinstance(w, ttk.Combobox))
+    _key(app, "<space>", widget=box)
+    assert not app.engine.running
+
+
+@pytest.mark.parametrize("n", range(1, 13))
+def test_strip_has_one_bar_per_beat_and_geometry_fits(app, n):
+    app.bpb_var.set(n)
+    items = app.canvas.find_all()
+    assert len(items) == n
+    assert int(app.canvas.cget("width")) == 4 + n * gui.DOT_SIZE + (n - 1) * gui.DOT_GAP
+    right = max(app.canvas.coords(i)[2] for i in items)
+    assert right + 2 <= int(app.canvas.cget("width"))
+    assert app._dot_at(2 + (n - 1) * (gui.DOT_SIZE + gui.DOT_GAP) + 1) == n - 1
+    assert app._dot_at(2 + n * (gui.DOT_SIZE + gui.DOT_GAP) + 1) is None
+
+
+def test_click_cycles_full_loop_through_events(app):
+    x = 2 + gui.DOT_SIZE // 2
+    levels = []
+    for _ in range(3):
+        _click(app, x)
+        levels.append(app.engine.level_of(0))
+    assert levels == [NORMAL, MUTE, ACCENT]
+
+
+def test_rescale_never_below_one_for_degenerate_sizes(app):
+    for size in ((0, 0), (1, 1), (0, 500), (500, 0)):
+        app.rescale(*size)
+        assert app._scale == 1.0
+        assert app.dot_size == gui.DOT_SIZE
+
+
+def test_rescale_uses_smaller_axis_ratio(app):
+    w, h = app.winfo_reqwidth(), app.winfo_reqheight()
+    app.rescale(3 * w, 2 * h)
+    assert app.dot_size == 2 * gui.DOT_SIZE
+    app.rescale(2 * w, 3 * h)
+    assert app.dot_size == 2 * gui.DOT_SIZE
+
+
+def test_adding_beats_grows_a_user_sized_window(app):
+    root = app.root
+    try:
+        app.bpb_var.set(2)
+        root.update()
+        root.geometry(f"{root.winfo_width()}x{root.winfo_height()}")
+        root.update()
+        app.bpb_var.set(12)
+        root.update()
+        assert root.winfo_width() >= root.winfo_reqwidth()
+        assert root.winfo_width() >= 4 + 12 * gui.DOT_SIZE + 11 * gui.DOT_GAP
+    finally:
+        root.geometry("")
+        root.minsize(1, 1)
+        root.update()
+
+
+def test_stop_restores_base_after_bump_and_clears_status(app):
+    app.bpm_var.set(100)
+    app.speed_on.set(True)
+    app.apply_trainers()
+    app.toggle()
+    _bump(app, 120)
+    _poll(app, Beat(0, 0.0, NORMAL, True, 120, True))
+    assert "→" in app.status_label.cget("text")
+    app.toggle()
+    assert app.bpm_var.get() == 100
+    assert app.engine.bpm == 100
+    assert app.status_label.cget("text") == ""
+
+
+@pytest.mark.xfail(strict=True, reason="IntField.read only catches TclError; OverflowError escapes")
+@pytest.mark.parametrize("text", ["inf", "-inf", "1e999"])
+def test_commit_fields_survives_infinite_text(app, text):
+    """IntVar.get() raises OverflowError (not TclError) for these; typing them must not crash."""
+    tk.Variable.set(app.bpm_var, text)
+    app.commit_fields()
+    assert app.bpm_var.get() == 120
+
+
+@pytest.mark.xfail(strict=True, reason="IntField.commit leaves '120.7' displayed while engine uses 120")
+def test_commit_normalises_decimal_text(app):
+    _type(app.hero_entry, "120.7")
+    _key(app, "<Return>", widget=app.hero_entry)
+    assert app.hero_entry.get() == str(app.engine.bpm)

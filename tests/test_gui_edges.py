@@ -599,7 +599,6 @@ def test_stop_restores_base_after_bump_and_clears_status(app):
     assert app.status_label.cget("text") == ""
 
 
-@pytest.mark.xfail(strict=True, reason="IntField.read only catches TclError; OverflowError escapes")
 @pytest.mark.parametrize("text", ["inf", "-inf", "1e999"])
 def test_commit_fields_survives_infinite_text(app, text):
     """IntVar.get() raises OverflowError (not TclError) for these; typing them must not crash."""
@@ -608,7 +607,6 @@ def test_commit_fields_survives_infinite_text(app, text):
     assert app.bpm_var.get() == 120
 
 
-@pytest.mark.xfail(strict=True, reason="IntField.commit leaves '120.7' displayed while engine uses 120")
 def test_commit_normalises_decimal_text(app):
     _type(app.hero_entry, "120.7")
     _key(app, "<Return>", widget=app.hero_entry)

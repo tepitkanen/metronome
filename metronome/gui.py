@@ -56,7 +56,8 @@ class IntField:
     def read(self) -> int | None:
         try:
             return self.var.get()
-        except tk.TclError:  # partially typed / empty field
+        # TclError: partially typed / empty field; OverflowError: "inf", "1e999" etc.
+        except (tk.TclError, OverflowError, ValueError):
             return None
 
     def _on_write(self) -> None:
@@ -70,7 +71,9 @@ class IntField:
     def commit(self) -> None:
         value = self.read()
         fixed = self.last if value is None else max(self.lo, min(self.hi, value))
-        if fixed != value:
+        # Compare the raw text too: IntVar reads "120.7" or "0x78" as 120, which would
+        # otherwise stay on screen although the clean number is what's in use.
+        if fixed != value or str(tk.Variable.get(self.var)) != str(fixed):
             self.var.set(fixed)  # triggers _on_write, which applies it
 
 

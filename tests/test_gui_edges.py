@@ -23,8 +23,14 @@ def app(tk_root, monkeypatch):
         tk_root.unbind(seq)
 
 
+def _descendants(widget):
+    for child in widget.winfo_children():
+        yield child
+        yield from _descendants(child)
+
+
 def _boxes(app):
-    return [w for w in app.winfo_children() if isinstance(w, ttk.Combobox)]
+    return [w for w in _descendants(app) if isinstance(w, ttk.Combobox)]
 
 
 def _fills(app):
@@ -201,3 +207,88 @@ def test_hover_over_beat_shows_hint_and_hand_cursor_and_leave_clears(app):
     app.root.update()
     assert str(app.canvas.cget("cursor")) == ""
     assert app.accent_hint.cget("text") == ""
+
+
+# --- collapsible sections / trainer status -------------------------------------
+
+
+def _section_parts(summary):
+    section = summary.master
+    button = next(w for w in section.winfo_children() if isinstance(w, ttk.Button))
+    body = next(w for w in section.winfo_children() if w.winfo_class() == "TFrame")
+    return button, body
+
+
+@pytest.mark.parametrize(("attr", "title"), [("sound_summary", "Sound"), ("practice_summary", "Practice")])
+def test_section_toggle_shows_and_hides_body(app, attr, title):
+    button, body = _section_parts(getattr(app, attr))
+    assert button.cget("text") == f"▸ {title}"
+    assert not body.winfo_ismapped()  # starts collapsed
+    button.invoke()
+    app.root.update()
+    assert body.winfo_ismapped()
+    assert button.cget("text") == f"▾ {title}"
+    button.invoke()
+    app.root.update()
+    assert not body.winfo_ismapped()
+    assert button.cget("text") == f"▸ {title}"
+    assert getattr(app, attr).winfo_ismapped()  # summary stays visible
+
+
+def test_sound_summary_follows_sound_and_volume(app):
+    assert app.sound_summary.cget("text") == f"Beep · {app.volume_var.get()}%"
+    app.sound_var.set("Wood")
+    app.set_sound()
+    app.set_volume(35)
+    assert app.sound_summary.cget("text") == "Wood · 35%"
+
+
+def test_practice_summary_follows_trainers(app):
+    assert app.practice_summary.cget("text") == "Off"
+    app.gap_on.set(True)
+    app.apply_trainers()
+    assert app.practice_summary.cget("text") == "Gap 2/2"
+    app.gap_mute.set(3)  # spinbox edit applies live
+    assert app.practice_summary.cget("text") == "Gap 2/3"
+    app.speed_on.set(True)
+    app.apply_trainers()
+    assert app.practice_summary.cget("text") == "Gap 2/3 · Speed +5/4 bars → 160"
+    app.gap_on.set(False)
+    app.apply_trainers()
+    assert app.practice_summary.cget("text") == "Speed +5/4 bars → 160"
+
+
+def _poll(app, beat):
+    app.engine.stream_time = lambda: 100.0
+    app.engine.beats.put(beat)
+    app._poll_beats()
+
+
+def test_status_empty_without_trainer(app):
+    app.toggle()
+    _poll(app, Beat(0, 1.0, ACCENT, True, 120))
+    assert app.status_label.cget("text") == ""
+
+
+def test_status_shows_gap_playing_and_silent(app):
+    app.gap_on.set(True)
+    app.apply_trainers()
+    app.toggle()
+    _poll(app, Beat(0, 1.0, ACCENT, True, 120))
+    assert app.status_label.cget("text") == "Playing"
+    _poll(app, Beat(0, 2.0, ACCENT, False, 120))
+    assert app.status_label.cget("text") == "Silent bar"
+
+
+def test_status_shows_speed_and_both_then_clears_on_stop(app):
+    app.speed_on.set(True)
+    app.apply_trainers()
+    app.toggle()
+    _poll(app, Beat(0, 1.0, ACCENT, True, 125, bumped=True))
+    assert app.status_label.cget("text") == "125 → 160 BPM"
+    app.gap_on.set(True)
+    app.apply_trainers()
+    _poll(app, Beat(1, 2.0, NORMAL, False, 125))
+    assert app.status_label.cget("text") == "Silent bar · 125 → 160 BPM"
+    app.toggle()  # stop
+    assert app.status_label.cget("text") == ""
